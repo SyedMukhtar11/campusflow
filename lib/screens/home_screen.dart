@@ -38,6 +38,10 @@ class HomeScreen extends StatelessWidget {
     }
 
     final upcoming = provider.allPrograms.take(3).toList();
+    final auth = context.watch<AuthProvider?>();
+    final userName = auth?.user?.name.trim().isNotEmpty == true
+        ? auth!.user!.name.trim().split(' ').first
+        : 'Alex';
 
     return Scaffold(
       appBar: AppBar(
@@ -101,7 +105,6 @@ class HomeScreen extends StatelessWidget {
               fontWeight: FontWeight.w800,
               color: context.textPrimary,
             ),
-          ),
           const SizedBox(height: 4),
           Text(
             "Here's what's happening across your campus.",
@@ -129,18 +132,65 @@ class HomeScreen extends StatelessWidget {
               ),
             ],
           ),
+          if (provider.ongoingRegistrations.isNotEmpty) ...[
+            const SizedBox(height: 24),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Ongoing Programs',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      color: context.textPrimary,
+                    ),
+                  ),
+                ),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: AppColors.indigo.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    '${provider.ongoingCount} active',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.indigo,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            ...provider.ongoingRegistrations.map((reg) {
+              final prog = reg.program ??
+                  provider.allPrograms.cast<Program?>().firstWhere(
+                        (p) => p?.id == reg.programId,
+                        orElse: () => null,
+                      );
+              if (prog == null) return const SizedBox.shrink();
+              return _OngoingProgramHomeCard(
+                registration: reg,
+                program: prog,
+              );
+            }),
+          ],
           const SizedBox(height: 24),
           Row(
             children: [
-              Text(
-                'Upcoming Events',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                  color: context.textPrimary,
+              Expanded(
+                child: Text(
+                  'Upcoming Events',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: context.textPrimary,
+                  ),
                 ),
               ),
-              const Spacer(),
               TextButton(onPressed: onSeeAll, child: const Text('View all')),
             ],
           ),
@@ -205,7 +255,8 @@ class HomeScreen extends StatelessWidget {
           ),
         ],
       ),
-    );
+    ),
+  );
   }
 }
 

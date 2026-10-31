@@ -3,7 +3,7 @@ name: CampusFlow API
 description: Contract for the CampusFlow Express API used by the Flutter app.
 variables:
   - key: base_url
-    value: 'http://localhost:3000'
+    value: 'https://campusflow-nq50.onrender.com'
 auth:
   type: bearer
   credentials:

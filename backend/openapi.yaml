@@ -4,8 +4,10 @@ info:
   version: 1.0.0
   description: Backend for the CampusFlow Flutter app. Send JWTs as Authorization Bearer tokens.
 servers:
+  - url: https://campusflow-nq50.onrender.com
+    description: Production (Render)
   - url: http://localhost:3000
-    description: Local
+    description: Local development
 paths:
   /health:
     get:
@@ -201,8 +203,31 @@ paths:
       security: [{ bearerAuth: [] }]
       responses:
         '200':
-          description: Registrations with nested program
+          description: Registrations with progress, status, and nested program
         '401':
+          $ref: '#/components/responses/Error'
+  /registrations/{programId}/modules/{moduleIndex}/toggle:
+    patch:
+      summary: Toggle module completion status
+      operationId: toggleModuleCompletion
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: programId
+          required: true
+          schema: { type: string }
+        - in: path
+          name: moduleIndex
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Updated module completion and registration progress
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
           $ref: '#/components/responses/Error'
   /notifications:
     get:

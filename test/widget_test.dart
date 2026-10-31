@@ -390,4 +390,17 @@ void main() {
       expect(scale, greaterThan(1.0));
     });
   });
+
+  testWidgets('My Learning tab opens without overflow on mobile', (tester) async {
+    phoneSize(tester);
+    await tester.pumpWidget(buildApp());
+    await login(tester);
+
+    await tester.tap(find.descendant(
+        of: find.byType(NavigationBar), matching: find.text('My Learning')));
+    await tester.pumpAndSettle();
+    expect(find.byType(TabBar), findsOneWidget);
+    expect(find.text('Ongoing'), findsWidgets);
+    expect(find.text('Completed'), findsWidgets);
+  });
 }

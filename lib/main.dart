@@ -18,6 +18,8 @@ void main() {
   runApp(
     MultiProvider(
       providers: [
+        // Authentication session & logged in user profile
+        ChangeNotifierProvider(create: (_) => AuthProvider()),
         // Programs, registrations, notifications and feedback.
         ChangeNotifierProvider(
           create: (_) => ProgramProvider(service: ProgramService(api: apiClient)),

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../models/feedback_entry.dart';
 import '../models/program.dart';
+import '../providers/auth_provider.dart';
 import '../providers/program_provider.dart';
 import '../utils/context_colors.dart';
 
@@ -30,6 +31,20 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
   int _rating = 0;
   String? _category;
   bool _ratingError = false;
+  bool _isSubmitting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final auth = context.read<AuthProvider?>();
+      if (auth?.user?.email != null && _emailCtrl.text.isEmpty) {
+        setState(() {
+          _emailCtrl.text = auth!.user!.email;
+        });
+      }
+    });
+  }
 
   @override
   void dispose() {
@@ -38,21 +53,12 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
     super.dispose();
   }
 
-  void _submit() {
+  Future<void> _submit() async {
     final fieldsValid = _formKey.currentState!.validate();
     setState(() => _ratingError = _rating == 0);
-    if (!fieldsValid || _rating == 0) return;
+    if (!fieldsValid || _rating == 0 || _isSubmitting) return;
 
-    context.read<ProgramProvider>().addFeedback(
-          FeedbackEntry(
-            programId: widget.program.id,
-            rating: _rating,
-            category: _category!,
-            email: _emailCtrl.text.trim(),
-            comment: _commentCtrl.text.trim(),
-            submittedAt: DateTime.now(),
-          ),
-        );
+    setState(() => _isSubmitting = true);
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Thank you for your feedback!')),

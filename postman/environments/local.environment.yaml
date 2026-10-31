@@ -1,7 +1,7 @@
 name: CampusFlow Local
 values:
   - key: base_url
-    value: 'http://localhost:3000'
+    value: 'https://campusflow-nq50.onrender.com'
     enabled: true
     type: default
     description: Local Express server

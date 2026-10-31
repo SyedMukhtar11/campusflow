@@ -5,18 +5,34 @@ import 'package:flutter/material.dart';
 import '../models/app_notification.dart';
 import '../models/feedback_entry.dart';
 import '../models/program.dart';
+import '../models/user_registration.dart';
+import '../services/api_client.dart';
+import '../services/notification_service.dart';
 import '../services/program_service.dart';
 
 class ProgramProvider extends ChangeNotifier {
   final ProgramService _service;
+  final NotificationService _notificationService;
 
-  ProgramProvider({ProgramService? service})
-      : _service = service ?? ProgramService() {
-    loadPrograms();
+  ProgramProvider({
+    ProgramService? service,
+    NotificationService? notificationService,
+    List<Program>? initialPrograms,
+    bool autoLoad = true,
+  })  : _service = service ?? ProgramService(),
+        _notificationService = notificationService ?? NotificationService() {
+    if (initialPrograms != null) {
+      _programs = initialPrograms;
+      _isLoading = false;
+    } else if (autoLoad) {
+      loadPrograms();
+    } else {
+      _isLoading = false;
+    }
   }
 
   // ---------------------------------------------------------------------
-  // Programs (loaded from assets/data/programs.json)
+  // Programs
   // ---------------------------------------------------------------------
   List<Program> _programs = [];
   bool _isLoading = true;
@@ -26,17 +42,53 @@ class ProgramProvider extends ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get error => _error;
 
-  /// Loads the programs. Used on start-up and by the Retry button.
+  /// Loads the programs. Used on start-up and by the Retry button / pull-to-refresh.
   Future<void> loadPrograms() async {
     _isLoading = true;
     _error = null;
     _safeNotify();
     try {
       _programs = await _service.fetchPrograms();
-    } catch (e) {
+    } catch (_) {
       _error = 'We could not load the programs. Please try again.';
     }
     _isLoading = false;
+    _safeNotify();
+  }
+
+  /// Synchronize all user-dependent data (registrations & notifications) with backend.
+  Future<void> syncWithBackend() async {
+    try {
+      // 1. Refresh programs from backend
+      final freshPrograms = await _service.fetchPrograms();
+      if (freshPrograms.isNotEmpty) {
+        _programs = freshPrograms;
+      }
+
+      // 2. Refresh registrations
+      final regs = await _service.fetchMyRegistrations();
+      if (regs.isNotEmpty) {
+        _userRegistrations
+          ..clear()
+          ..addAll(regs);
+        _registeredIds
+          ..clear()
+          ..addAll(regs.map((r) => r.programId));
+      } else {
+        final registered = await _service.fetchMyRegisteredProgramIds();
+        _registeredIds
+          ..clear()
+          ..addAll(registered);
+      }
+
+      // 3. Refresh notifications
+      final notifResult = await _notificationService.fetchNotifications();
+      _notifications
+        ..clear()
+        ..addAll(notifResult.notifications);
+    } catch (_) {
+      // Silently fall back to cached data if network momentarily fails
+    }
     _safeNotify();
   }
 
@@ -98,6 +150,7 @@ class ProgramProvider extends ChangeNotifier {
   ];
 
   final Set<String> _registeredIds = {};
+  final List<UserRegistration> _userRegistrations = [];
   final List<FeedbackEntry> _feedback = [];
   String _selectedCategory = 'All';
   String _query = '';
@@ -132,11 +185,34 @@ class ProgramProvider extends ChangeNotifier {
   }
 
   // ---------------------------------------------------------------------
+  // User Registrations & Learning Progress
+  // ---------------------------------------------------------------------
+  List<UserRegistration> get registrations =>
+      List.unmodifiable(_userRegistrations);
+
+  List<UserRegistration> get ongoingRegistrations =>
+      _userRegistrations.where((r) => r.isOngoing).toList();
+
+  List<UserRegistration> get completedRegistrations =>
+      _userRegistrations.where((r) => r.isCompleted).toList();
+
+  UserRegistration? getRegistration(String programId) {
+    try {
+      return _userRegistrations.firstWhere((r) => r.programId == programId);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  int get ongoingCount => ongoingRegistrations.length;
+  int get completedCount => completedRegistrations.length;
+
+  // ---------------------------------------------------------------------
   // Feedback
   // ---------------------------------------------------------------------
   List<FeedbackEntry> get feedbackEntries => List.unmodifiable(_feedback);
 
-  void addFeedback(FeedbackEntry entry) {
+  Future<bool> addFeedback(FeedbackEntry entry) async {
     _feedback.add(entry);
     unawaited(_service.submitFeedback(entry).catchError((Object e) {
       debugPrint('Feedback not synced: $e');
@@ -151,24 +227,45 @@ class ProgramProvider extends ChangeNotifier {
 
   int get unreadCount => _notifications.where((n) => !n.read).length;
 
-  void markRead(String id) {
+  Future<void> markRead(String id) async {
     for (final n in _notifications) {
       if (n.id == id && !n.read) {
         n.read = true;
-        notifyListeners();
+        _safeNotify();
+
+        // Only send network PATCH if id is a valid 24-character hex MongoDB ObjectId
+        if (RegExp(r'^[0-9a-fA-F]{24}$').hasMatch(id)) {
+          try {
+            await _notificationService.markRead(id);
+          } catch (_) {}
+        }
+        break;
       }
     }
   }
 
-  void markAllRead() {
+  Future<void> markAllRead() async {
     for (final n in _notifications) {
       n.read = true;
     }
-    notifyListeners();
+    _safeNotify();
+    try {
+      await _notificationService.markAllRead();
+    } catch (_) {}
+  }
+
+  Future<void> reloadNotifications() async {
+    try {
+      final result = await _notificationService.fetchNotifications();
+      _notifications
+        ..clear()
+        ..addAll(result.notifications);
+      _safeNotify();
+    } catch (_) {}
   }
 
   // ---------------------------------------------------------------------
-  // Registration
+  // Registration & Module Completion
   // ---------------------------------------------------------------------
   int get registeredCount => _registeredIds.length;
 
@@ -180,7 +277,7 @@ class ProgramProvider extends ChangeNotifier {
 
   void setCategory(String category) {
     _selectedCategory = category;
-    notifyListeners();
+    _safeNotify();
   }
 
   void setQuery(String query) {
@@ -204,7 +301,30 @@ class ProgramProvider extends ChangeNotifier {
           icon: Icons.event_available_outlined,
         ),
       );
-      notifyListeners();
+      _safeNotify();
+    }
+
+    // 3. Sync with backend API
+    try {
+      final updatedReg =
+          await _service.toggleModuleCompletion(programId, moduleIndex);
+      final idx =
+          _userRegistrations.indexWhere((r) => r.programId == programId);
+      if (idx != -1) {
+        _userRegistrations[idx] = updatedReg.copyWith(
+          program: _userRegistrations[idx].program ?? program,
+        );
+      } else {
+        _userRegistrations.add(updatedReg.copyWith(program: program));
+      }
+      if (updatedReg.isCompleted) {
+        await reloadNotifications();
+      }
+      _safeNotify();
+      return true;
+    } catch (_) {
+      // Keep optimistic state on network failure
+      return true;
     }
   }
 }

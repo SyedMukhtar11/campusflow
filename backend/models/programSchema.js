@@ -23,7 +23,7 @@ const programSchema = new mongoose.Schema(
     duration: { type: String, default: '' },
     fee: { type: String, default: 'Free' },
     supportedBy: { type: String, default: '' },
-    startsInDays: { type: Number, default: 0 },
+    
     learningPath: { type: [String], default: [] },
     lastDateToApply: { type: String, default: '' },
     startDate: { type: String, default: '' },

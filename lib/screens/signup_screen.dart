@@ -77,7 +77,6 @@ class _SignupScreenState extends State<SignupScreen> {
                       ),
                     TextFormField(
                       controller: _nameCtrl,
-                      textCapitalization: TextCapitalization.words,
                       decoration: const InputDecoration(
                         labelText: 'Full name',
                         prefixIcon: Icon(Icons.person_outline),

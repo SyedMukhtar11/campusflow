@@ -8,14 +8,58 @@ import '../utils/theme.dart';
 import '../widgets/feedback_button.dart';
 import 'registration_confirmation_screen.dart';
 
-class ProgramDetailsScreen extends StatelessWidget {
+class ProgramDetailsScreen extends StatefulWidget {
   final Program program;
   const ProgramDetailsScreen({super.key, required this.program});
 
   @override
+  State<ProgramDetailsScreen> createState() => _ProgramDetailsScreenState();
+}
+
+class _ProgramDetailsScreenState extends State<ProgramDetailsScreen> {
+  bool _isRegistering = false;
+
+  Future<void> _handleRegister(ProgramProvider provider) async {
+    setState(() => _isRegistering = true);
+    try {
+      final success = await provider.register(widget.program);
+      if (!mounted) return;
+      if (success) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => RegistrationConfirmationScreen(
+              program: widget.program,
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            e.toString().replaceAll('ApiException: ', '').replaceAll('Exception: ', ''),
+          ),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isRegistering = false);
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final program = widget.program;
     final provider = context.watch<ProgramProvider>();
     final registered = provider.isRegistered(program.id);
+    final reg = provider.getRegistration(program.id);
+    final isProgramCompleted = reg?.isCompleted ?? false;
+    final progress = reg?.progress ?? 0;
+    final completedModules = reg?.completedModules ?? const <int>[];
     final left = provider.spotsLeft(program);
     final full = left <= 0 && !registered;
 
@@ -140,7 +184,97 @@ class ProgramDetailsScreen extends StatelessWidget {
                       _Section(
                         title: 'Learning Path',
                         child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            if (registered) ...[
+                              Container(
+                                margin: const EdgeInsets.only(bottom: 16),
+                                padding: const EdgeInsets.all(14),
+                                decoration: BoxDecoration(
+                                  color: isProgramCompleted
+                                      ? const Color(0xFF059669).withValues(alpha: 0.1)
+                                      : AppColors.lavender.withValues(alpha: 0.35),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: isProgramCompleted
+                                        ? const Color(0xFF059669).withValues(alpha: 0.3)
+                                        : AppColors.indigo.withValues(alpha: 0.2),
+                                  ),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Icon(
+                                              isProgramCompleted
+                                                  ? Icons.workspace_premium
+                                                  : Icons.trending_up,
+                                              size: 18,
+                                              color: isProgramCompleted
+                                                  ? const Color(0xFF059669)
+                                                  : AppColors.indigo,
+                                            ),
+                                            const SizedBox(width: 6),
+                                            Text(
+                                              isProgramCompleted
+                                                  ? 'Program Completed! 🎉'
+                                                  : 'Your Progress',
+                                              style: TextStyle(
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.w700,
+                                                color: isProgramCompleted
+                                                    ? const Color(0xFF059669)
+                                                    : AppColors.indigo,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        Text(
+                                          '$progress%',
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w800,
+                                            color: isProgramCompleted
+                                                ? const Color(0xFF059669)
+                                                : AppColors.indigo,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 8),
+                                    ClipRRect(
+                                      borderRadius: BorderRadius.circular(4),
+                                      child: LinearProgressIndicator(
+                                        value: progress / 100,
+                                        minHeight: 6,
+                                        backgroundColor: context.isDark
+                                            ? const Color(0xFF334155)
+                                            : const Color(0xFFCBD5E1),
+                                        valueColor: AlwaysStoppedAnimation<Color>(
+                                          isProgramCompleted
+                                              ? const Color(0xFF059669)
+                                              : AppColors.indigo,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      isProgramCompleted
+                                          ? 'All modules completed! Your completion rewards are unlocked.'
+                                          : '${completedModules.length} of ${program.learningPath.length} modules completed. Tap "Mark as complete" as you finish each module.',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: context.textMuted,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                             for (
                               var i = 0;
                               i < program.learningPath.length;
@@ -151,6 +285,10 @@ class ProgramDetailsScreen extends StatelessWidget {
                                 title: 'Module ${i + 1}',
                                 description: program.learningPath[i],
                                 isLast: i == program.learningPath.length - 1,
+                                isRegistered: registered,
+                                isCompleted: completedModules.contains(i),
+                                onToggle: () =>
+                                    provider.toggleModule(program.id, i),
                               ),
                           ],
                         ),
@@ -233,25 +371,25 @@ class ProgramDetailsScreen extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: ElevatedButton(
-            onPressed: (registered || full)
+            onPressed: (registered || full || _isRegistering)
                 ? null
-                : () {
-                    provider.register(program);
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) =>
-                            RegistrationConfirmationScreen(program: program),
-                      ),
-                    );
-                  },
-            child: Text(
-              registered
-                  ? 'Registered ✓'
-                  : full
-                  ? 'Event full'
-                  : 'Register',
-            ),
+                : () => _handleRegister(provider),
+            child: _isRegistering
+                ? const SizedBox(
+                    height: 20,
+                    width: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : Text(
+                    registered
+                        ? 'Registered ✓'
+                        : full
+                        ? 'Event full'
+                        : 'Register',
+                  ),
           ),
         ),
       ),
@@ -305,7 +443,7 @@ class _Fact extends StatelessWidget {
         children: [
           Icon(icon, size: 18, color: context.textPrimary),
           const SizedBox(width: 7),
-          Text(label),
+          Flexible(child: Text(label)),
         ],
       ),
     );
@@ -369,15 +507,26 @@ class _PathItem extends StatelessWidget {
   final String title;
   final String description;
   final bool isLast;
+  final bool isRegistered;
+  final bool isCompleted;
+  final VoidCallback? onToggle;
+
   const _PathItem({
     required this.number,
     required this.title,
     required this.description,
     required this.isLast,
+    this.isRegistered = false,
+    this.isCompleted = false,
+    this.onToggle,
   });
 
   @override
   Widget build(BuildContext context) {
+    final avatarColor = isCompleted
+        ? const Color(0xFF059669)
+        : (context.isDark ? AppColors.indigo : AppColors.navy);
+
     return IntrinsicHeight(
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -386,33 +535,112 @@ class _PathItem extends StatelessWidget {
             children: [
               CircleAvatar(
                 radius: 15,
-                backgroundColor:
-                    context.isDark ? AppColors.indigo : AppColors.navy,
-                child: Text(
-                  '$number',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
+                backgroundColor: avatarColor,
+                child: isCompleted
+                    ? const Icon(Icons.check, size: 16, color: Colors.white)
+                    : Text(
+                        '$number',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
               ),
               if (!isLast)
-                Expanded(child: Container(width: 2, color: AppColors.lavender)),
+                Expanded(
+                  child: Container(
+                    width: 2,
+                    color: isCompleted
+                        ? const Color(0xFF059669).withValues(alpha: 0.5)
+                        : AppColors.lavender,
+                  ),
+                ),
             ],
           ),
           const SizedBox(width: 12),
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.only(bottom: 18),
+              padding: const EdgeInsets.only(bottom: 20),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    title,
-                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          title,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            color: isCompleted
+                                ? const Color(0xFF059669)
+                                : context.textPrimary,
+                          ),
+                        ),
+                      ),
+                      if (isRegistered && onToggle != null) ...[
+                        const SizedBox(width: 8),
+                        InkWell(
+                          borderRadius: BorderRadius.circular(8),
+                          onTap: onToggle,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 5,
+                            ),
+                            decoration: BoxDecoration(
+                              color: isCompleted
+                                  ? const Color(0xFF059669).withValues(alpha: 0.12)
+                                  : AppColors.indigo.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: isCompleted
+                                    ? const Color(0xFF059669)
+                                    : AppColors.indigo.withValues(alpha: 0.4),
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  isCompleted
+                                      ? Icons.check_circle
+                                      : Icons.radio_button_unchecked,
+                                  size: 14,
+                                  color: isCompleted
+                                      ? const Color(0xFF059669)
+                                      : AppColors.indigo,
+                                ),
+                                const SizedBox(width: 5),
+                                Text(
+                                  isCompleted ? 'Completed ✓' : 'Mark as complete',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: isCompleted
+                                        ? const Color(0xFF059669)
+                                        : AppColors.indigo,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                   const SizedBox(height: 3),
-                  Text(description, style: _bodyStyle(context)),
+                  Text(
+                    description,
+                    style: TextStyle(
+                      color: isCompleted
+                          ? context.textMuted
+                          : context.textPrimary.withValues(alpha: 0.85),
+                      height: 1.4,
+                      decoration:
+                          isCompleted ? TextDecoration.lineThrough : null,
+                    ),
+                  ),
                 ],
               ),
             ),

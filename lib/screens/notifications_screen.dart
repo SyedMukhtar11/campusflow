@@ -55,21 +55,26 @@ class _NotificationList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final provider = context.read<ProgramProvider>();
+
     if (items.isEmpty) {
       return Center(
         child: Text('Nothing here', style: TextStyle(color: context.textMuted)),
       );
     }
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: items.length,
-      itemBuilder: (context, i) {
-        final n = items[i];
-        return GestureDetector(
-          onTap: () => context.read<ProgramProvider>().markRead(n.id),
-          child: Container(
-            margin: const EdgeInsets.only(bottom: 10),
-            padding: const EdgeInsets.all(12),
+    return RefreshIndicator(
+      onRefresh: provider.reloadNotifications,
+      child: ListView.builder(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(16),
+        itemCount: items.length,
+        itemBuilder: (context, i) {
+          final n = items[i];
+          return GestureDetector(
+            onTap: () => provider.markRead(n.id),
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               color: n.read ? context.surface : context.tint,
               borderRadius: BorderRadius.circular(14),
@@ -113,6 +118,7 @@ class _NotificationList extends StatelessWidget {
           ),
         );
       },
-    );
+    ),
+  );
   }
 }

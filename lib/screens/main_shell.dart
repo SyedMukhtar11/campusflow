@@ -62,9 +62,9 @@ class _MainShellState extends State<MainShell> {
             label: 'Programs',
           ),
           NavigationDestination(
-            icon: Icon(Icons.event_outlined),
-            selectedIcon: Icon(Icons.event),
-            label: 'Events',
+            icon: Icon(Icons.school_outlined),
+            selectedIcon: Icon(Icons.school),
+            label: 'My Learning',
           ),
           NavigationDestination(
             icon: Icon(Icons.person_outline),
