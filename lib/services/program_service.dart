@@ -6,6 +6,7 @@ import 'package:flutter/services.dart' show rootBundle;
 import '../config/api_config.dart';
 import '../models/feedback_entry.dart';
 import '../models/program.dart';
+import '../models/user_registration.dart';
 import 'api_client.dart';
 
 /// Loads programs from the backend (when USE_API=true) or from the local
@@ -14,7 +15,6 @@ import 'api_client.dart';
 class ProgramService {
   final ApiClient _api;
   final Future<String> Function() _loader;
-  final ApiClient? _api;
 
   /// Optional delay used in UI previews or unit tests.
   final Duration delay;
@@ -25,10 +25,9 @@ class ProgramService {
   ProgramService({
     ApiClient? api,
     Future<String> Function()? loader,
-    ApiClient? api,
-    this.delay = const Duration(milliseconds: 800),
+    this.delay = Duration.zero,
   })  : _loader = loader ?? _defaultLoader,
-        _api = api;
+        _api = api ?? ApiClient.instance;
 
   static Future<String> _defaultLoader() =>
       rootBundle.loadString('assets/data/programs.json');
@@ -41,21 +40,53 @@ class ProgramService {
     if (delay > Duration.zero) {
       await Future.delayed(delay);
     }
-    final api = _api;
-    if (ApiConfig.useApi && api != null) {
+
+    if (ApiConfig.useApi) {
       try {
-        final data = await api.get(ApiConfig.programsPath);
+        final queryParams = <String, dynamic>{};
+        if (category != null && category != 'All') {
+          queryParams['category'] = category;
+        }
+        if (query != null && query.isNotEmpty) {
+          queryParams['q'] = query;
+        }
+
+        final data = await _api.get(
+          ApiConfig.programsPath,
+          queryParams: queryParams,
+        );
         final programs = _parse(_extractList(data));
         if (programs.isNotEmpty) {
           usedLocalData = false;
-          return programs;
+          var result = programs;
+          if (category != null && category != 'All') {
+            result = result.where((p) => p.category == category).toList();
+          }
+          if (query != null && query.isNotEmpty) {
+            result = result
+                .where((p) =>
+                    p.title.toLowerCase().contains(query.toLowerCase()))
+                .toList();
+          }
+          return result;
         }
       } catch (e) {
         debugPrint('API programs failed, using local data: $e');
       }
     }
+
     usedLocalData = true;
-    return _parse(json.decode(await _loader()));
+    final raw = await _loader();
+    var list = _parse(json.decode(raw));
+    if (category != null && category != 'All') {
+      list = list.where((p) => p.category == category).toList();
+    }
+    if (query != null && query.isNotEmpty) {
+      list = list
+          .where((p) => p.title.toLowerCase().contains(query.toLowerCase()))
+          .toList();
+    }
+    return list;
   }
 
   List<Program> _parse(dynamic list) {
@@ -65,17 +96,6 @@ class ProgramService {
     return list
         .map((e) => Program.fromJson(Map<String, dynamic>.from(e as Map)))
         .toList();
-
-    if (category != null && category != 'All') {
-      list = list.where((p) => p.category == category).toList();
-    }
-    if (query != null && query.isNotEmpty) {
-      list = list
-          .where((p) => p.title.toLowerCase().contains(query.toLowerCase()))
-          .toList();
-    }
-
-    return list;
   }
 
   /// Fetches a single program by its ID.
@@ -149,13 +169,17 @@ class ProgramService {
 
   /// Submits user feedback for a program.
   Future<FeedbackEntry> submitFeedback(FeedbackEntry entry) async {
-    final response = await _api.post(
-      '/programs/${entry.programId}/feedback',
-      body: entry.toJson(),
-    );
-    final feedbackData = response['feedback'] as Map<String, dynamic>?;
-    if (feedbackData != null) {
-      return FeedbackEntry.fromJson(feedbackData);
+    try {
+      final response = await _api.post(
+        '/programs/${entry.programId}/feedback',
+        body: entry.toJson(),
+      );
+      final feedbackData = response['feedback'] as Map<String, dynamic>?;
+      if (feedbackData != null) {
+        return FeedbackEntry.fromJson(feedbackData);
+      }
+    } catch (e) {
+      debugPrint('Feedback API call failed: $e');
     }
     return entry;
   }
@@ -170,23 +194,8 @@ class ProgramService {
     throw const FormatException('Unexpected programs response');
   }
 
-  /// Sends a registration to the backend (does nothing in demo mode).
+  /// Sends a registration to the backend.
   Future<void> submitRegistration(String programId) async {
-    final api = _api;
-    if (!ApiConfig.useApi || api == null) return;
-    await api.post(ApiConfig.registrationsPath, {'programId': programId});
-  }
-
-  /// Sends feedback to the backend (does nothing in demo mode).
-  Future<void> submitFeedback(FeedbackEntry entry) async {
-    final api = _api;
-    if (!ApiConfig.useApi || api == null) return;
-    await api.post(ApiConfig.feedbackPath, {
-      'programId': entry.programId,
-      'rating': entry.rating,
-      'category': entry.category,
-      'email': entry.email,
-      'comment': entry.comment,
-    });
+    await registerForProgram(programId);
   }
 }

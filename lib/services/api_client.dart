@@ -5,35 +5,43 @@ import 'package:http/http.dart' as http;
 
 import '../config/api_config.dart';
 
+/// Exception thrown by ApiClient on network errors or bad HTTP status codes.
 class ApiException implements Exception {
   final String message;
-  final int? statusCode;
-  const ApiException(this.message, [this.statusCode]);
+  final int statusCode;
+  final dynamic data;
+
+  const ApiException(
+    this.message, [
+    this.statusCode = 0,
+    this.data,
+  ]);
 
   @override
   String toString() => message;
 }
 
-/// Small wrapper around `http`: JSON headers, login token, timeout and
-/// friendly error messages. Supports GET, POST, PATCH and DELETE.
+/// Centralized HTTP client managing baseUrl, token header injection,
+/// timeouts, and error handling.
 class ApiClient {
-  /// Default backend address (the deployed Render service).
-  static String get defaultBaseUrl => ApiConfig.baseUrl;
+  static const String productionBaseUrl =
+      'https://campusflow-nq50.onrender.com';
 
-  /// Shared instance used by services and providers.
-  static final ApiClient instance = ApiClient();
+  static final ApiClient instance = ApiClient._internal();
+  factory ApiClient({String? baseUrl, http.Client? client}) {
+    if (baseUrl != null) instance.setBaseUrl(baseUrl);
+    return instance;
+  }
+  ApiClient._internal()
+      : _baseUrl = _trimSlash(ApiConfig.baseUrl),
+        _http = http.Client();
+
+  /// Default API base URL.
+  static String get defaultBaseUrl => ApiConfig.baseUrl;
 
   String _baseUrl;
   final http.Client _http;
-  /// Login token sent with every request.
   String? token;
-
-  ApiClient({String? baseUrl, http.Client? client})
-      : _baseUrl = _trimSlash(baseUrl ?? ApiConfig.baseUrl),
-        _http = client ?? http.Client();
-
-  static String _trimSlash(String url) =>
-      url.endsWith('/') ? url.substring(0, url.length - 1) : url;
 
   String get baseUrl => _baseUrl;
   void setBaseUrl(String url) => _baseUrl = _trimSlash(url);
@@ -41,11 +49,23 @@ class ApiClient {
   String? get authToken => token;
   void setAuthToken(String? value) => token = value;
 
-  Uri _uri(String path) {
+  static String _trimSlash(String url) =>
+      url.endsWith('/') ? url.substring(0, url.length - 1) : url;
+
+  Uri _uri(String path, [Map<String, dynamic>? queryParams]) {
     var p = path.startsWith('/') ? path : '/$path';
     final prefix = ApiConfig.apiPrefix;
     if (prefix.isNotEmpty && !p.startsWith(prefix)) p = '$prefix$p';
-    return Uri.parse('$_baseUrl$p');
+    final fullUrl = '$_baseUrl$p';
+    final uri = Uri.parse(fullUrl);
+
+    if (queryParams != null && queryParams.isNotEmpty) {
+      final stringParams = queryParams.map(
+        (key, value) => MapEntry(key, value.toString()),
+      );
+      return uri.replace(queryParameters: stringParams);
+    }
+    return uri;
   }
 
   Map<String, String> get _headers => {
@@ -54,10 +74,16 @@ class ApiClient {
         if (token != null) 'Authorization': 'Bearer $token',
       };
 
-  Future<dynamic> get(String path) =>
-      _send(() => _http.get(_uri(path), headers: _headers));
+  Future<dynamic> get(String path, {Map<String, dynamic>? queryParams}) =>
+      _send(() => _http.get(_uri(path, queryParams), headers: _headers));
 
   Future<dynamic> post(String path, {Object? body}) => _send(() => _http.post(
+        _uri(path),
+        headers: _headers,
+        body: body == null ? null : jsonEncode(body),
+      ));
+
+  Future<dynamic> put(String path, {Object? body}) => _send(() => _http.put(
         _uri(path),
         headers: _headers,
         body: body == null ? null : jsonEncode(body),
@@ -78,19 +104,29 @@ class ApiClient {
       final dynamic decoded = res.body.isEmpty ? null : jsonDecode(res.body);
       if (res.statusCode >= 200 && res.statusCode < 300) return decoded;
       throw ApiException(
-        _messageFrom(decoded) ?? 'Request failed (${res.statusCode}).',
+        _messageFrom(decoded) ?? 'Request failed with status ${res.statusCode}',
         res.statusCode,
+        decoded,
       );
     } on ApiException {
       rethrow;
     } on TimeoutException {
       throw const ApiException(
-          'The server took too long to respond. Please try again.');
+        'The server took too long to respond. Please try again.',
+        408,
+      );
     } on http.ClientException {
       throw const ApiException(
-          'Cannot reach the server. Check your internet connection.');
+        'Unable to connect to server. Check your network connection.',
+        0,
+      );
     } on FormatException {
-      throw const ApiException('The server sent an unexpected response.');
+      throw const ApiException(
+        'The server sent an unexpected response.',
+        500,
+      );
+    } catch (e) {
+      throw ApiException(e.toString(), 0);
     }
   }
 

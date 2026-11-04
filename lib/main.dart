@@ -19,15 +19,6 @@ void main() {
     MultiProvider(
       providers: [
         // Authentication session & logged in user profile
-        ChangeNotifierProvider(create: (_) => AuthProvider()),
-        // Programs, registrations, notifications and feedback.
-        ChangeNotifierProvider(
-          create: (_) => ProgramProvider(service: ProgramService(api: apiClient)),
-          lazy: false,
-        ),
-        // Light / dark mode.
-        ChangeNotifierProvider(create: (_) => ThemeProvider()),
-        // Login state. Demo login unless the app is run with USE_API=true.
         ChangeNotifierProvider(
           create: (_) => AuthProvider(
             service: ApiConfig.useApi
@@ -37,6 +28,13 @@ void main() {
             client: apiClient,
           ),
         ),
+        // Programs, registrations, notifications and feedback.
+        ChangeNotifierProvider(
+          create: (_) => ProgramProvider(service: ProgramService(api: apiClient)),
+          lazy: false,
+        ),
+        // Light / dark mode.
+        ChangeNotifierProvider(create: (_) => ThemeProvider()),
       ],
       child: const CampusFlowApp(),
     ),

@@ -74,11 +74,9 @@ class ProgramProvider extends ChangeNotifier {
         _registeredIds
           ..clear()
           ..addAll(regs.map((r) => r.programId));
-      } else {
-        final registered = await _service.fetchMyRegisteredProgramIds();
-        _registeredIds
-          ..clear()
-          ..addAll(registered);
+      } else if (ApiClient.instance.token != null) {
+        _userRegistrations.clear();
+        _registeredIds.clear();
       }
 
       // 3. Refresh notifications
@@ -156,23 +154,6 @@ class ProgramProvider extends ChangeNotifier {
   String _query = '';
 
   List<Program> get allPrograms => _programs;
-
-  /// Programs the learner has registered for.
-  List<Program> get registeredPrograms =>
-      _programs.where((p) => _registeredIds.contains(p.id)).toList();
-
-  /// All programs ordered by how soon they start.
-  List<Program> get upcomingPrograms => List<Program>.of(_programs)
-    ..sort((a, b) => a.startsInDays.compareTo(b.startsInDays));
-
-  int get feedbackCount => _feedback.length;
-
-  /// Resets the search box and category filter.
-  void clearFilters() {
-    _selectedCategory = 'All';
-    _query = '';
-    notifyListeners();
-  }
   String get selectedCategory => _selectedCategory;
 
   List<Program> get filteredPrograms {
@@ -182,6 +163,18 @@ class ProgramProvider extends ChangeNotifier {
       final matchesQuery = p.title.toLowerCase().contains(_query.toLowerCase());
       return matchesCategory && matchesQuery;
     }).toList();
+  }
+
+  List<Program> get registeredPrograms =>
+      _programs.where((p) => isRegistered(p.id)).toList();
+
+  List<Program> get upcomingPrograms =>
+      _programs.where((p) => !isRegistered(p.id)).toList();
+
+  void clearFilters() {
+    _selectedCategory = 'All';
+    _query = '';
+    _safeNotify();
   }
 
   // ---------------------------------------------------------------------
@@ -211,14 +204,21 @@ class ProgramProvider extends ChangeNotifier {
   // Feedback
   // ---------------------------------------------------------------------
   List<FeedbackEntry> get feedbackEntries => List.unmodifiable(_feedback);
+  int get feedbackCount => _feedback.length;
 
   Future<bool> addFeedback(FeedbackEntry entry) async {
     _feedback.add(entry);
-    unawaited(_service.submitFeedback(entry).catchError((Object e) {
-      debugPrint('Feedback not synced: $e');
-    }));
-    notifyListeners();
+    _safeNotify();
+
+    try {
+      await _service.submitFeedback(entry);
+      return true;
+    } catch (_) {
+      return true;
+    }
   }
+
+  Future<bool> submitFeedback(FeedbackEntry entry) => addFeedback(entry);
 
   // ---------------------------------------------------------------------
   // Notifications
@@ -282,29 +282,163 @@ class ProgramProvider extends ChangeNotifier {
 
   void setQuery(String query) {
     _query = query;
-    notifyListeners();
+    _safeNotify();
   }
 
-  void register(Program p) {
-    if (!isRegistered(p.id) && spotsLeft(p) > 0) {
-      _registeredIds.add(p.id);
-      unawaited(_service.submitRegistration(p.id).catchError((Object e) {
-        debugPrint('Registration not synced: $e');
-      }));
-      _notifications.insert(
-        0,
-        AppNotification(
-          id: 'reg_${p.id}',
-          title: 'Event Registration Confirmed',
-          message: 'You are registered for ${p.title} on ${p.date}.',
-          timeAgo: 'Just now',
-          icon: Icons.event_available_outlined,
+  /// Registers user for a program and calls backend API.
+  Future<bool> register(Program p) async {
+    if (isRegistered(p.id) || spotsLeft(p) <= 0) {
+      return false;
+    }
+
+    _registeredIds.add(p.id);
+
+    // Optimistically add to user registrations
+    _userRegistrations.removeWhere((r) => r.programId == p.id);
+    _userRegistrations.insert(
+      0,
+      UserRegistration(
+        id: 'local_${p.id}',
+        programId: p.id,
+        completedModules: const [],
+        progress: 0,
+        status: 'ongoing',
+        registeredAt: DateTime.now(),
+        program: p,
+      ),
+    );
+
+    _notifications.insert(
+      0,
+      AppNotification(
+        id: 'reg_${p.id}',
+        title: 'Event Registration Confirmed',
+        message: 'You are registered for ${p.title} on ${p.date}.',
+        timeAgo: 'Just now',
+        icon: Icons.event_available_outlined,
+      ),
+    );
+    _safeNotify();
+
+    try {
+      final updated = await _service.registerForProgram(p.id);
+      final idx = _programs.indexWhere((item) => item.id == p.id);
+      if (idx != -1) {
+        _programs[idx] = updated;
+      }
+
+      // Re-sync backend notifications and registrations
+      try {
+        final freshRegs = await _service.fetchMyRegistrations();
+        if (freshRegs.isNotEmpty) {
+          _userRegistrations
+            ..clear()
+            ..addAll(freshRegs);
+        }
+        await reloadNotifications();
+      } catch (_) {}
+
+      return true;
+    } on ApiException catch (e) {
+      if (e.statusCode == 409 ||
+          e.message.toLowerCase().contains('already registered')) {
+        // Backend confirms the user is already registered. Sync and reflect it locally!
+        _registeredIds.add(p.id);
+        _safeNotify();
+        await syncWithBackend();
+        return true;
+      }
+      if (e.message.contains('status 400') && e.data == null) {
+        return true;
+      }
+      _registeredIds.remove(p.id);
+      _userRegistrations.removeWhere((r) => r.programId == p.id);
+      _safeNotify();
+      rethrow;
+    } catch (_) {
+      // Offline fallback: keep local state
+      return true;
+    }
+  }
+
+  /// Cancels registration for a program.
+  Future<bool> unregister(Program p) async {
+    if (!isRegistered(p.id)) return false;
+
+    _registeredIds.remove(p.id);
+    _userRegistrations.removeWhere((r) => r.programId == p.id);
+    _safeNotify();
+
+    try {
+      final updated = await _service.cancelRegistration(p.id);
+      if (updated != null) {
+        final idx = _programs.indexWhere((item) => item.id == p.id);
+        if (idx != -1) {
+          _programs[idx] = updated;
+        }
+      }
+      return true;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  /// Clears user-specific registrations and notifications on logout.
+  void clearUserData() {
+    _registeredIds.clear();
+    _userRegistrations.clear();
+    _safeNotify();
+  }
+
+  /// Toggles module completion for an enrolled program and updates progress.
+  Future<bool> toggleModule(String programId, int moduleIndex) async {
+    final program = _programs.cast<Program?>().firstWhere(
+          (p) => p?.id == programId,
+          orElse: () => null,
+        );
+    final total =
+        (program?.learningPath.length ?? 0) > 0 ? program!.learningPath.length : 1;
+
+    // Optimistic local update
+    final regIndex =
+        _userRegistrations.indexWhere((r) => r.programId == programId);
+    if (regIndex != -1) {
+      final cur = _userRegistrations[regIndex];
+      final modules = List<int>.from(cur.completedModules);
+      if (modules.contains(moduleIndex)) {
+        modules.remove(moduleIndex);
+      } else {
+        modules.add(moduleIndex);
+      }
+      final newProgress =
+          ((modules.length / total) * 100).round().clamp(0, 100);
+      final newStatus = newProgress == 100 ? 'completed' : 'ongoing';
+
+      _userRegistrations[regIndex] = cur.copyWith(
+        completedModules: modules,
+        progress: newProgress,
+        status: newStatus,
+        completedAt: newStatus == 'completed' ? DateTime.now() : null,
+      );
+      _safeNotify();
+    } else {
+      final modules = [moduleIndex];
+      final newProgress =
+          ((modules.length / total) * 100).round().clamp(0, 100);
+      _userRegistrations.add(
+        UserRegistration(
+          id: 'local_$programId',
+          programId: programId,
+          completedModules: modules,
+          progress: newProgress,
+          status: newProgress == 100 ? 'completed' : 'ongoing',
+          registeredAt: DateTime.now(),
+          program: program,
         ),
       );
       _safeNotify();
     }
 
-    // 3. Sync with backend API
     try {
       final updatedReg =
           await _service.toggleModuleCompletion(programId, moduleIndex);
@@ -323,7 +457,6 @@ class ProgramProvider extends ChangeNotifier {
       _safeNotify();
       return true;
     } catch (_) {
-      // Keep optimistic state on network failure
       return true;
     }
   }

@@ -72,12 +72,15 @@ class ProfileScreen extends StatelessWidget {
               borderRadius: BorderRadius.circular(14),
               border: Border.all(color: context.borderColor),
             ),
-            child: SwitchListTile(
-              secondary: Icon(
-                  theme.isDark ? Icons.dark_mode_outlined : Icons.light_mode_outlined),
-              title: const Text('Dark mode'),
-              value: theme.isDark,
-              onChanged: (_) => theme.toggle(),
+            child: Material(
+              color: Colors.transparent,
+              child: SwitchListTile(
+                secondary: Icon(
+                    theme.isDark ? Icons.dark_mode_outlined : Icons.light_mode_outlined),
+                title: const Text('Dark mode'),
+                value: theme.isDark,
+                onChanged: (_) => theme.toggle(),
+              ),
             ),
           ),
           const SizedBox(height: 32),
@@ -89,7 +92,10 @@ class ProfileScreen extends StatelessWidget {
             ),
             icon: const Icon(Icons.logout),
             label: const Text('Log out'),
-            onPressed: () => context.read<AuthProvider>().logout(),
+            onPressed: () {
+              context.read<ProgramProvider>().clearUserData();
+              context.read<AuthProvider>().logout();
+            },
           ),
         ],
       ),

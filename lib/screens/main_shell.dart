@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../config/api_config.dart';
 import '../providers/program_provider.dart';
 import '../utils/context_colors.dart';
 import '../utils/theme.dart';
-import 'events_screen.dart';
 import 'home_screen.dart';
+import 'my_programs_screen.dart';
 import 'profile_screen.dart';
 import 'program_list_screen.dart';
 
@@ -24,12 +23,10 @@ class _MainShellState extends State<MainShell> {
   @override
   void initState() {
     super.initState();
-    // With the live backend, reload programs after login so the token is used.
-    if (ApiConfig.useApi) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) context.read<ProgramProvider>().loadPrograms();
-      });
-    }
+    // Synchronize all user registrations, progress, and notifications
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) context.read<ProgramProvider>().syncWithBackend();
+    });
   }
 
   @override
@@ -37,7 +34,7 @@ class _MainShellState extends State<MainShell> {
     final pages = [
       HomeScreen(onSeeAll: () => setState(() => _index = 1)),
       const ProgramListScreen(),
-      const EventsScreen(),
+      MyProgramsScreen(onExplore: () => setState(() => _index = 1)),
       const ProfileScreen(),
     ];
 

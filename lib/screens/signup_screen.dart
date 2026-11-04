@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/auth_provider.dart';
+import '../providers/program_provider.dart';
 import '../utils/context_colors.dart';
 import '../utils/validators.dart';
 
@@ -39,6 +40,8 @@ class _SignupScreenState extends State<SignupScreen> {
       _passwordCtrl.text,
     );
     if (ok && mounted) {
+      await context.read<ProgramProvider>().syncWithBackend();
+      if (!mounted) return;
       // Go back to the root; AuthGate now shows the Home screen.
       Navigator.of(context).popUntil((route) => route.isFirst);
     }

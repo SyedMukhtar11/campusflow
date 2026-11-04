@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../models/user.dart';
 import '../services/api_client.dart';
 import '../services/auth_service.dart';
 import '../services/session_storage.dart';
@@ -10,7 +11,7 @@ class AuthProvider extends ChangeNotifier {
   final SessionStorage _storage;
   final ApiClient? _client;
 
-  AuthUser? _user;
+  User? _user;
   bool _initializing = true;
   bool _busy = false;
   String? _error;
@@ -20,25 +21,28 @@ class AuthProvider extends ChangeNotifier {
   late final Future<void> ready;
 
   AuthProvider({
-    required AuthService service,
+    AuthService? service,
     SessionStorage? storage,
     ApiClient? client,
-  })  : _service = service,
+  })  : _service = service ?? ApiAuthService(client),
         _storage = storage ?? MemorySessionStorage(),
-        _client = client {
+        _client = client ?? ApiClient.instance {
     ready = _restore();
   }
 
-  AuthUser? get user => _user;
+  User? get user => _user;
+  String? get token => _client?.token;
   bool get isLoggedIn => _user != null;
+  bool get isAuthenticated => isLoggedIn;
   bool get isInitializing => _initializing;
   bool get isBusy => _busy;
+  bool get isLoading => _busy;
   String? get error => _error;
 
   Future<void> _restore() async {
     final saved = await _storage.read();
     if (saved != null) {
-      _user = AuthUser(name: saved.name, email: saved.email);
+      _user = User(name: saved.name, email: saved.email);
       _client?.token = saved.token;
     }
     _initializing = false;

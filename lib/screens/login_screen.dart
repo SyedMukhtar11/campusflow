@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../config/api_config.dart';
 import '../providers/auth_provider.dart';
+import '../providers/program_provider.dart';
 import '../utils/context_colors.dart';
 
 import '../utils/validators.dart';
@@ -20,7 +21,6 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   bool _obscure = true;
-  bool _isLoading = false;
 
   @override
   void dispose() {
@@ -33,10 +33,13 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!_formKey.currentState!.validate()) return;
     FocusScope.of(context).unfocus();
     // On success AuthGate shows the Home screen automatically.
-    await context.read<AuthProvider>().login(
+    final ok = await context.read<AuthProvider>().login(
           _emailCtrl.text.trim(),
           _passwordCtrl.text,
         );
+    if (ok && mounted) {
+      await context.read<ProgramProvider>().syncWithBackend();
+    }
   }
 
   @override
@@ -60,23 +63,19 @@ class _LoginScreenState extends State<LoginScreen> {
                     Text(
                       'CampusFlow',
                       textAlign: TextAlign.center,
-                      style: TextStyle(color: AppColors.muted),
-                    ),
-                    const SizedBox(height: 36),
-                    const Text(
-                      'Welcome back',
                       style: TextStyle(
-                        fontSize: 30,
+                        fontSize: 28,
                         fontWeight: FontWeight.w800,
                         color: context.textPrimary,
                       ),
                     ),
+                    const SizedBox(height: 4),
                     Text(
                       'Learn · Engage · Grow',
                       textAlign: TextAlign.center,
                       style: TextStyle(color: context.textMuted),
                     ),
-                    const SizedBox(height: 36),
+                    const SizedBox(height: 32),
                     Text(
                       'Welcome back',
                       style: TextStyle(

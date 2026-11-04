@@ -59,11 +59,28 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
     if (!fieldsValid || _rating == 0 || _isSubmitting) return;
 
     setState(() => _isSubmitting = true);
+    try {
+      final entry = FeedbackEntry(
+        programId: widget.program.id,
+        rating: _rating,
+        category: _category ?? 'Content',
+        email: _emailCtrl.text.trim(),
+        comment: _commentCtrl.text.trim(),
+        submittedAt: DateTime.now(),
+      );
+      await context.read<ProgramProvider>().submitFeedback(entry);
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Thank you for your feedback!')),
-    );
-    Navigator.pop(context);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Thank you for your feedback!')),
+        );
+        Navigator.pop(context);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSubmitting = false);
+      }
+    }
   }
 
   @override

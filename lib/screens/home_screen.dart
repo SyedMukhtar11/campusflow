@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/program.dart';
+import '../models/user_registration.dart';
 import '../providers/auth_provider.dart';
 import '../providers/program_provider.dart';
 import '../utils/context_colors.dart';
@@ -95,50 +97,98 @@ class HomeScreen extends StatelessWidget {
           const SizedBox(width: 4),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Text(
-            'Good morning, ${context.watch<AuthProvider>().user?.name ?? 'there'} 👋',
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.w800,
-              color: context.textPrimary,
+      body: RefreshIndicator(
+        onRefresh: provider.syncWithBackend,
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            Text(
+              'Good morning, $userName 👋',
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.w800,
+                color: context.textPrimary,
+              ),
             ),
-          const SizedBox(height: 4),
-          Text(
-            "Here's what's happening across your campus.",
-            style: TextStyle(color: context.textMuted),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              _StatCard(
-                icon: Icons.menu_book_outlined,
-                label: 'Programs',
-                value: '${provider.allPrograms.length}',
+            const SizedBox(height: 4),
+            Text(
+              "Here's what's happening across your campus.",
+              style: TextStyle(color: context.textMuted),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                _StatCard(
+                  icon: Icons.menu_book_outlined,
+                  label: 'Programs',
+                  value: '${provider.allPrograms.length}',
+                ),
+                const SizedBox(width: 10),
+                const _StatCard(
+                  icon: Icons.event_outlined,
+                  label: 'Events',
+                  value: '8',
+                ),
+                const SizedBox(width: 10),
+                _StatCard(
+                  icon: Icons.how_to_reg_outlined,
+                  label: 'Registered',
+                  value: '${provider.registeredCount}',
+                ),
+              ],
+            ),
+            if (provider.ongoingRegistrations.isNotEmpty) ...[
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Ongoing Programs',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: context.textPrimary,
+                      ),
+                    ),
+                  ),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: AppColors.indigo.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      '${provider.ongoingCount} active',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.indigo,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 10),
-              const _StatCard(
-                icon: Icons.event_outlined,
-                label: 'Events',
-                value: '8',
-              ),
-              const SizedBox(width: 10),
-              _StatCard(
-                icon: Icons.how_to_reg_outlined,
-                label: 'Registered',
-                value: '${provider.registeredCount}',
-              ),
+              const SizedBox(height: 12),
+              ...provider.ongoingRegistrations.map((reg) {
+                final prog = reg.program ??
+                    provider.allPrograms.cast<Program?>().firstWhere(
+                          (p) => p?.id == reg.programId,
+                          orElse: () => null,
+                        );
+                if (prog == null) return const SizedBox.shrink();
+                return _OngoingProgramHomeCard(
+                  registration: reg,
+                  program: prog,
+                );
+              }),
             ],
-          ),
-          if (provider.ongoingRegistrations.isNotEmpty) ...[
             const SizedBox(height: 24),
             Row(
               children: [
                 Expanded(
                   child: Text(
-                    'Ongoing Programs',
+                    'Upcoming Events',
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.w700,
@@ -146,117 +196,72 @@ class HomeScreen extends StatelessWidget {
                     ),
                   ),
                 ),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: AppColors.indigo.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Text(
-                    '${provider.ongoingCount} active',
-                    style: const TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.indigo,
-                    ),
-                  ),
-                ),
+                TextButton(onPressed: onSeeAll, child: const Text('View all')),
               ],
             ),
+            ...upcoming.map(
+              (p) => ProgramCard(
+                program: p,
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => ProgramDetailsScreen(program: p),
+                  ),
+                ),
+              ),
+            ),
             const SizedBox(height: 12),
-            ...provider.ongoingRegistrations.map((reg) {
-              final prog = reg.program ??
-                  provider.allPrograms.cast<Program?>().firstWhere(
-                        (p) => p?.id == reg.programId,
-                        orElse: () => null,
-                      );
-              if (prog == null) return const SizedBox.shrink();
-              return _OngoingProgramHomeCard(
-                registration: reg,
-                program: prog,
-              );
-            }),
-          ],
-          const SizedBox(height: 24),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'Upcoming Events',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    color: context.textPrimary,
-                  ),
-                ),
-              ),
-              TextButton(onPressed: onSeeAll, child: const Text('View all')),
-            ],
-          ),
-          ...upcoming.map(
-            (p) => ProgramCard(
-              program: p,
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => ProgramDetailsScreen(program: p),
-                ),
+            Text(
+              'Announcements',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: context.textPrimary,
               ),
             ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            'Announcements',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-              color: context.textPrimary,
-            ),
-          ),
-          const SizedBox(height: 8),
-          ..._announcements.map(
-            (a) => Container(
-              margin: const EdgeInsets.only(bottom: 8),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: context.surface,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: context.borderColor),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.campaign_outlined, color: AppColors.indigo),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          a.$1,
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            color: context.textPrimary,
+            const SizedBox(height: 8),
+            ..._announcements.map(
+              (a) => Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: context.surface,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: context.borderColor),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.campaign_outlined, color: AppColors.indigo),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            a.$1,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              color: context.textPrimary,
+                            ),
                           ),
-                        ),
-                        Text(
-                          a.$2,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: context.textMuted,
+                          Text(
+                            a.$2,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: context.textMuted,
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
-    ),
-  );
+    );
   }
 }
 
@@ -300,6 +305,128 @@ class _StatCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _OngoingProgramHomeCard extends StatelessWidget {
+  final UserRegistration registration;
+  final Program program;
+
+  const _OngoingProgramHomeCard({
+    required this.registration,
+    required this.program,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final completedCount = registration.completedModules.length;
+    final totalModules = program.learningPath.length;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: context.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.indigo.withValues(alpha: 0.25)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppColors.lavender.withValues(alpha: 0.5),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  program.category,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.navy,
+                  ),
+                ),
+              ),
+              const Spacer(),
+              Text(
+                '${registration.progress}%',
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.indigo,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            program.title,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: context.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: registration.progress / 100,
+              minHeight: 6,
+              backgroundColor: context.isDark
+                  ? const Color(0xFF334155)
+                  : const Color(0xFFE2E8F0),
+              valueColor: const AlwaysStoppedAnimation<Color>(AppColors.indigo),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                '$completedCount / $totalModules modules completed',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: context.textMuted,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              InkWell(
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ProgramDetailsScreen(program: program),
+                    ),
+                  );
+                },
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Continue',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.indigo,
+                      ),
+                    ),
+                    Icon(
+                      Icons.chevron_right,
+                      size: 16,
+                      color: AppColors.indigo,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

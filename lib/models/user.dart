@@ -5,7 +5,7 @@ class User {
   final DateTime? createdAt;
 
   const User({
-    required this.id,
+    this.id = '',
     required this.name,
     required this.email,
     this.createdAt,
